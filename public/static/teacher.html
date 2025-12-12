@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - Chemistry LMS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <!-- Login Screen -->
+    <div id="loginScreen" class="min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-chalkboard-teacher text-4xl text-indigo-600"></i>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800">Đăng nhập Giáo viên</h2>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tên đăng nhập</label>
+                    <input type="text" id="username" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="admin">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Mật khẩu</label>
+                    <input type="password" id="password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent" placeholder="admin123">
+                </div>
+                <button onclick="login()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">
+                    Đăng nhập
+                </button>
+                <a href="/" class="block text-center text-indigo-600 hover:underline">Quay lại trang chủ</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboardScreen" class="hidden">
+        <!-- Navbar -->
+        <nav class="bg-indigo-600 text-white p-4 shadow-lg">
+            <div class="container mx-auto flex justify-between items-center">
+                <div class="flex items-center space-x-4">
+                    <i class="fas fa-flask text-2xl"></i>
+                    <span class="text-xl font-bold">Chemistry LMS</span>
+                    <span id="teacherName" class="text-sm opacity-75"></span>
+                </div>
+                <button onclick="logout()" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-lg">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Đăng xuất
+                </button>
+            </div>
+        </nav>
+
+        <!-- Tabs -->
+        <div class="bg-white shadow">
+            <div class="container mx-auto">
+                <div class="flex space-x-1">
+                    <button onclick="showTab('students')" id="tabStudents" class="px-6 py-4 font-semibold border-b-2 border-indigo-600 text-indigo-600">
+                        <i class="fas fa-user-graduate mr-2"></i>Quản lý Học sinh
+                    </button>
+                    <button onclick="showTab('folders')" id="tabFolders" class="px-6 py-4 font-semibold text-gray-600 hover:text-indigo-600">
+                        <i class="fas fa-folder mr-2"></i>Thư mục Đề thi
+                    </button>
+                    <button onclick="showTab('exams')" id="tabExams" class="px-6 py-4 font-semibold text-gray-600 hover:text-indigo-600">
+                        <i class="fas fa-file-alt mr-2"></i>Quản lý Đề thi
+                    </button>
+                    <button onclick="showTab('results')" id="tabResults" class="px-6 py-4 font-semibold text-gray-600 hover:text-indigo-600">
+                        <i class="fas fa-chart-bar mr-2"></i>Kết quả
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="container mx-auto p-6">
+            <!-- Students Tab -->
+            <div id="studentsContent" class="tab-content">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">Danh sách Học sinh</h2>
+                        <button onclick="showAddStudentModal()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                            <i class="fas fa-plus mr-2"></i>Thêm học sinh
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mã HS</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Họ tên</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lớp</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentsTableBody" class="divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Folders Tab -->
+            <div id="foldersContent" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">Thư mục Đề thi</h2>
+                        <button onclick="showAddFolderModal()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                            <i class="fas fa-plus mr-2"></i>Tạo thư mục
+                        </button>
+                    </div>
+                    <div id="foldersGrid" class="grid md:grid-cols-3 gap-6">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Exams Tab -->
+            <div id="examsContent" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">Danh sách Đề thi</h2>
+                        <button onclick="showCreateExamModal()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                            <i class="fas fa-plus mr-2"></i>Tạo đề thi mới
+                        </button>
+                    </div>
+                    <div id="examsList" class="space-y-4">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Tab -->
+            <div id="resultsContent" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Kết quả Thi</h2>
+                    <div id="resultsList">
+                        <p class="text-gray-500">Chọn một đề thi để xem kết quả...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modalOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div id="modalContent" class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        </div>
+    </div>
+
+    <script src="/static/teacher.js"></script>
+</body>
+</html>
