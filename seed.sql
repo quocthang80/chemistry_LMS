@@ -1,6 +1,6 @@
 -- Données de test pour l'enseignant
 INSERT OR IGNORE INTO teachers (username, password, name) VALUES 
-  ('admin', 'admin123', 'Professeur Nguyen');
+  ('admin', '31051980', 'Professeur Thắng');
 
 -- Données de test pour les étudiants
 INSERT OR IGNORE INTO students (student_code, name, class) VALUES 

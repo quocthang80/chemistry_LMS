@@ -3,10 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teacher Dashboard - Chemistry LMS</title>
+    <title>Teacher Dashboard - Chemistry LMS (v6.1)</title>
+    <!-- Tailwind CSS -->
+    <script src="/static/teacher.v5.js?v=6.1"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- KaTeX for Chemical Formulas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/mhchem.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 </head>
 <body class="bg-gray-100">
     <!-- Login Screen -->
@@ -42,7 +51,7 @@
             <div class="container mx-auto flex justify-between items-center">
                 <div class="flex items-center space-x-4">
                     <i class="fas fa-flask text-2xl"></i>
-                    <span class="text-xl font-bold">Chemistry LMS</span>
+                    <span class="text-xl font-bold">Chemistry LMS <small class="text-yellow-300 text-xs">(v6.0)</small></span>
                     <span id="teacherName" class="text-sm opacity-75"></span>
                 </div>
                 <button onclick="logout()" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-lg">
@@ -78,9 +87,14 @@
                 <div class="bg-white rounded-lg shadow-lg p-6">
                     <div class="flex justify-between items-center mb-6">
                         <h2 class="text-2xl font-bold text-gray-800">Danh sách Học sinh</h2>
-                        <button onclick="showAddStudentModal()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
-                            <i class="fas fa-plus mr-2"></i>Thêm học sinh
-                        </button>
+                        <div class="flex space-x-3">
+                            <button onclick="showImportStudentModal()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                <i class="fas fa-file-excel mr-2"></i>Nhập Excel
+                            </button>
+                            <button onclick="showAddStudentModal()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                                <i class="fas fa-plus mr-2"></i>Thêm học sinh
+                            </button>
+                        </div>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full">
@@ -144,7 +158,11 @@
         <div id="modalContent" class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         </div>
     </div>
-
-    <script src="/static/teacher.js"></script>
+    
+    <!-- Formula Modal (separate from main modal) -->
+    <div id="formulaModalOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center">
+        <div id="formulaModalContent" class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        </div>
+    </div>
 </body>
 </html>
