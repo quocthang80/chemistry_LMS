@@ -54,9 +54,15 @@
                     <span class="text-xl font-bold">Chemistry LMS <small class="text-yellow-300 text-xs">(v6.0)</small></span>
                     <span id="teacherName" class="text-sm opacity-75"></span>
                 </div>
-                <button onclick="logout()" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-lg">
-                    <i class="fas fa-sign-out-alt mr-2"></i>Đăng xuất
-                </button>
+                <div class="flex items-center space-x-3">
+                    <button onclick="showAPIKeyManagementModal()" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg flex items-center space-x-2">
+                        <i class="fas fa-key"></i>
+                        <span class="hidden md:inline">Quản lý API Keys</span>
+                    </button>
+                    <button onclick="logout()" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-lg">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Đăng xuất
+                    </button>
+                </div>
             </div>
         </nav>
 

@@ -285,13 +285,15 @@ function renderQuestions() {
                             <label class="flex items-center cursor-pointer">
                                 <input type="radio" name="statement_${question.id}_${stmtIdx}" value="true" 
                                        onchange="saveStatementAnswer(${question.id}, ${stmtIdx}, true)"
-                                       class="w-4 h-4 text-green-600">
+                                       class="w-4 h-4 text-green-600"
+                                       ${isTrueSelected ? 'checked' : ''}>
                                 <span class="ml-2 text-green-600 font-medium">Đúng</span>
                             </label>
                             <label class="flex items-center cursor-pointer">
                                 <input type="radio" name="statement_${question.id}_${stmtIdx}" value="false" 
                                        onchange="saveStatementAnswer(${question.id}, ${stmtIdx}, false)"
-                                       class="w-4 h-4 text-red-600">
+                                       class="w-4 h-4 text-red-600"
+                                       ${isFalseSelected ? 'checked' : ''}>
                                 <span class="ml-2 text-red-600 font-medium">Sai</span>
                             </label>
                         </div>

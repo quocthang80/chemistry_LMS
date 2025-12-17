@@ -241,6 +241,91 @@ let folders = [];
 let exams = [];
 let examQuestions = []; // Array to hold questions when creating/editing exam
 
+// ==========================================
+// AI API KEY MANAGEMENT (LocalStorage)
+// ==========================================
+
+// Supported AI providers
+const AI_PROVIDERS = {
+    gemini: {
+        name: 'Google Gemini',
+        badge: 'FREE',
+        badgeColor: 'bg-green-100 text-green-700',
+        model: 'gemini-2.0-flash',
+        description: 'Khuyến nghị - Miễn phí & Ổn định (15 requests/phút)',
+        icon: 'fa-google'
+    },
+    openai: {
+        name: 'OpenAI',
+        badge: 'PAID',
+        badgeColor: 'bg-blue-100 text-blue-700',
+        model: 'gpt-4o-mini',
+        description: 'Trả phí - Chi phí thấp',
+        icon: 'fa-brain'
+    },
+    claude: {
+        name: 'Anthropic Claude',
+        badge: 'PAID',
+        badgeColor: 'bg-purple-100 text-purple-700',
+        model: 'claude-3-haiku-20240307',
+        description: 'Trả phí - Chi phí thấp',
+        icon: 'fa-robot'
+    }
+};
+
+// Get all stored API keys
+function getAPIKeys() {
+    try {
+        const stored = localStorage.getItem('ai_api_keys');
+        return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+        console.error('Error reading API keys:', e);
+        return {};
+    }
+}
+
+// Save API key for a provider
+function saveAPIKey(provider, key, label = '') {
+    try {
+        const keys = getAPIKeys();
+        keys[provider] = {
+            key: key,
+            label: label || AI_PROVIDERS[provider]?.name || provider,
+            addedAt: new Date().toISOString()
+        };
+        localStorage.setItem('ai_api_keys', JSON.stringify(keys));
+        return true;
+    } catch (e) {
+        console.error('Error saving API key:', e);
+        return false;
+    }
+}
+
+// Delete API key for a provider
+function deleteAPIKey(provider) {
+    try {
+        const keys = getAPIKeys();
+        delete keys[provider];
+        localStorage.setItem('ai_api_keys', JSON.stringify(keys));
+        return true;
+    } catch (e) {
+        console.error('Error deleting API key:', e);
+        return false;
+    }
+}
+
+// Get API key for a specific provider
+function getAPIKeyForProvider(provider) {
+    const keys = getAPIKeys();
+    return keys[provider]?.key || null;
+}
+
+// Mask API key for display (show first 8 and last 4 characters)
+function maskAPIKey(key) {
+    if (!key || key.length < 12) return '••••••••••••';
+    return key.substring(0, 8) + '••••••••' + key.substring(key.length - 4);
+}
+
 // Login
 async function login() {
     const username = document.getElementById('username').value;
@@ -1218,6 +1303,7 @@ async function viewExamResults(examId) {
                             <th class="px-4 py-2 text-left">%</th>
                             <th class="px-4 py-2 text-left">Thời gian</th>
                             <th class="px-4 py-2 text-left">Chi tiết</th>
+                            <th class="px-4 py-2 text-left">Reset</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1249,6 +1335,13 @@ async function viewExamResults(examId) {
                                         <i class="fas fa-eye"></i>
                                     </button>
                                 </td>
+                                <td class="px-4 py-2">
+                                    <button onclick="resetStudentExam(${r.id}, ${examId}, '${r.student_name}', '${r.student_code}')" 
+                                            class="text-orange-600 hover:text-orange-800"
+                                            title="Reset bài làm - cho phép làm lại">
+                                        <i class="fas fa-redo"></i>
+                                    </button>
+                                </td>
                             </tr>
                         `}).join('')}
                     </tbody>
@@ -1262,6 +1355,21 @@ async function viewExamResults(examId) {
     } catch (error) {
         console.error(error);
         alert('Lỗi khi tải kết quả!');
+    }
+}
+
+async function resetStudentExam(resultId, examId, studentName, studentCode) {
+    const confirmMessage = `Bạn có chắc muốn reset bài làm của học sinh này?\n\nHọc sinh: ${studentName} (${studentCode})\n\nSau khi reset, học sinh sẽ có thể làm lại bài thi này.`;
+    
+    if (!confirm(confirmMessage)) return;
+
+    try {
+        await axios.delete(`/api/results/${resultId}`);
+        alert('Đã reset bài làm thành công! Học sinh có thể làm lại bài thi.');
+        viewExamResults(examId); // Refresh the results modal
+    } catch (error) {
+        console.error(error);
+        alert('Lỗi khi reset bài làm: ' + (error.response?.data?.error || error.message));
     }
 }
 
@@ -1307,11 +1415,12 @@ async function viewStudentAnswers(resultId, examId) {
             `;
 
             if (q.question_type === 'mcq' && q.options) {
-                const selectedOption = answer ? q.options.find(o => o.id == answer.selected_option) : null;
+                // Student saves answer by index (0, 1, 2, 3)
+                const selectedIndex = answer ? answer.selected_option : -1;
                 
                 detailsHTML += '<div class="space-y-2">';
-                q.options.forEach(opt => {
-                    const isSelected = selectedOption && opt.id === selectedOption.id;
+                q.options.forEach((opt, optIdx) => {
+                    const isSelected = selectedIndex === optIdx;
                     const isCorrect = opt.is_correct;
                     const bgColor = isCorrect ? 'bg-green-50 border-green-500' : 
                                    (isSelected ? 'bg-red-50 border-red-500' : 'bg-gray-50 border-gray-200');
@@ -1327,7 +1436,7 @@ async function viewStudentAnswers(resultId, examId) {
             } else if (q.question_type === 'true_false' && q.statements) {
                 detailsHTML += '<div class="space-y-2">';
                 q.statements.forEach((stmt, stmtIdx) => {
-                    const studentAnswer = answer && answer.statements ? answer.statements[stmt.id] : null;
+                    const studentAnswer = answer && answer.statements ? answer.statements[stmtIdx] : null;
                     const isCorrect = studentAnswer == stmt.is_correct;
                     const bgColor = isCorrect ? 'bg-green-50' : 'bg-red-50';
                     
@@ -1504,19 +1613,264 @@ async function saveGrading(resultId, examId) {
     }
 }
 
+// ==========================================
+// AI API KEY MANAGEMENT UI
+// ==========================================
+
+function showAPIKeyManagementModal() {
+    const apiKeys = getAPIKeys();
+    const configuredProviders = Object.keys(apiKeys);
+    
+    let providersHTML = '';
+    
+    // Show configured providers
+    if (configuredProviders.length > 0) {
+        providersHTML = `
+            <div class="space-y-3 mb-4">
+                <h4 class="font-bold text-sm text-gray-700">API Keys đã cấu hình:</h4>
+                ${configuredProviders.map(provider => {
+                    const providerInfo = AI_PROVIDERS[provider];
+                    const keyData = apiKeys[provider];
+                    if (!providerInfo) return '';
+                    
+                    return `
+                        <div class="bg-gray-50 border rounded-lg p-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <i class="fas ${providerInfo.icon} text-lg"></i>
+                                        <span class="font-bold">${providerInfo.name}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded ${providerInfo.badgeColor}">${providerInfo.badge}</span>
+                                    </div>
+                                    <p class="text-xs text-gray-600 mb-1">${providerInfo.description}</p>
+                                    <p class="text-xs text-gray-500 font-mono">${maskAPIKey(keyData.key)}</p>
+                                    ${keyData.label !== providerInfo.name ? `<p class="text-xs text-gray-500 italic mt-1">${keyData.label}</p>` : ''}
+                                </div>
+                                <button onclick="deleteAPIKeyConfirm('${provider}')" 
+                                        class="text-red-600 hover:text-red-800 ml-2">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } else {
+        providersHTML = `
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p class="text-sm text-yellow-800">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    Chưa có API key nào được cấu hình. Thêm ít nhất một API key để sử dụng tính năng sinh câu hỏi bằng AI.
+                </p>
+            </div>
+        `;
+    }
+    
+    // Available providers to add
+    const availableProviders = Object.keys(AI_PROVIDERS).filter(p => !configuredProviders.includes(p));
+    
+    let addProviderHTML = '';
+    if (availableProviders.length > 0) {
+        addProviderHTML = `
+            <div class="border-t pt-4">
+                <h4 class="font-bold text-sm text-gray-700 mb-3">Thêm API Key mới:</h4>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Chọn nhà cung cấp</label>
+                        <select id="newProviderSelect" class="w-full px-4 py-2 border rounded-lg" onchange="updateProviderInfo()">
+                            <option value="">-- Chọn nhà cung cấp --</option>
+                            ${availableProviders.map(provider => {
+                                const info = AI_PROVIDERS[provider];
+                                return `<option value="${provider}">${info.name} (${info.badge})</option>`;
+                            }).join('')}
+                        </select>
+                    </div>
+                    <div id="providerInfoBox" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p class="text-sm text-blue-800" id="providerInfoText"></p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">API Key <span class="text-red-500">*</span></label>
+                        <input type="password" id="newAPIKey" placeholder="Nhập API key của bạn" 
+                               class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-lock mr-1"></i>
+                            API key được lưu an toàn trên trình duyệt của bạn
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Nhãn (tùy chọn)</label>
+                        <input type="text" id="newAPIKeyLabel" placeholder="VD: API Key công ty" 
+                               class="w-full px-4 py-2 border rounded-lg text-sm">
+                    </div>
+                    <button onclick="addNewAPIKey()" 
+                            class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
+                        <i class="fas fa-plus mr-2"></i>Thêm API Key
+                    </button>
+                </div>
+            </div>
+        `;
+    } else {
+        addProviderHTML = `
+            <div class="border-t pt-4">
+                <p class="text-sm text-gray-600 text-center">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    Đã cấu hình tất cả các nhà cung cấp AI có sẵn
+                </p>
+            </div>
+        `;
+    }
+    
+    showModal(`
+        <h3 class="text-2xl font-bold mb-4">
+            <i class="fas fa-key mr-2 text-indigo-600"></i>
+            Quản lý API Keys
+        </h3>
+        <div class="space-y-4">
+            ${providersHTML}
+            ${addProviderHTML}
+            <div class="border-t pt-4">
+                <button onclick="hideModal()" 
+                        class="w-full bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400">
+                    Đóng
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+// Update provider info when selecting a new provider
+function updateProviderInfo() {
+    const select = document.getElementById('newProviderSelect');
+    const infoBox = document.getElementById('providerInfoBox');
+    const infoText = document.getElementById('providerInfoText');
+    
+    if (!select || !infoBox || !infoText) return;
+    
+    const provider = select.value;
+    if (provider && AI_PROVIDERS[provider]) {
+        const info = AI_PROVIDERS[provider];
+        infoText.innerHTML = `
+            <i class="fas ${info.icon} mr-2"></i>
+            <strong>${info.name}</strong> - ${info.description}<br>
+            <span class="text-xs">Model: ${info.model}</span>
+        `;
+        infoBox.classList.remove('hidden');
+    } else {
+        infoBox.classList.add('hidden');
+    }
+}
+
+// Add new API key
+function addNewAPIKey() {
+    const provider = document.getElementById('newProviderSelect')?.value;
+    const apiKey = document.getElementById('newAPIKey')?.value?.trim();
+    const label = document.getElementById('newAPIKeyLabel')?.value?.trim();
+    
+    if (!provider) {
+        alert('Vui lòng chọn nhà cung cấp!');
+        return;
+    }
+    
+    if (!apiKey) {
+        alert('Vui lòng nhập API key!');
+        return;
+    }
+    
+    // Basic validation
+    if (apiKey.length < 10) {
+        alert('API key không hợp lệ (quá ngắn)!');
+        return;
+    }
+    
+    if (saveAPIKey(provider, apiKey, label)) {
+        alert('Đã thêm API key thành công!');
+        showAPIKeyManagementModal(); // Refresh the modal
+    } else {
+        alert('Lỗi khi lưu API key!');
+    }
+}
+
+// Delete API key with confirmation
+function deleteAPIKeyConfirm(provider) {
+    const providerInfo = AI_PROVIDERS[provider];
+    if (!providerInfo) return;
+    
+    if (confirm(`Bạn có chắc muốn xóa API key cho ${providerInfo.name}?`)) {
+        if (deleteAPIKey(provider)) {
+            alert('Đã xóa API key!');
+            showAPIKeyManagementModal(); // Refresh the modal
+        } else {
+            alert('Lỗi khi xóa API key!');
+        }
+    }
+}
+
 function showAIGenerateModal() {
-    const storedKey = localStorage.getItem('gemini_api_key') || '';
+    const apiKeys = getAPIKeys();
+    const configuredProviders = Object.keys(apiKeys);
+    
+    // Check if any API keys are configured
+    if (configuredProviders.length === 0) {
+        showModal(`
+            <h3 class="text-2xl font-bold mb-4">
+                <i class="fas fa-robot mr-2 text-purple-600"></i>
+                Sinh câu hỏi bằng AI
+            </h3>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-yellow-600 mb-4"></i>
+                <p class="text-lg font-bold text-gray-800 mb-2">Chưa cấu hình API Key</p>
+                <p class="text-sm text-gray-600 mb-4">
+                    Bạn cần thêm ít nhất một API key để sử dụng tính năng sinh câu hỏi bằng AI.
+                </p>
+                <button onclick="showAPIKeyManagementModal()" 
+                        class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 mb-2">
+                    <i class="fas fa-key mr-2"></i>Quản lý API Keys
+                </button>
+                <br>
+                <button onclick="showCreateExamModal()" 
+                        class="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400 mt-2">
+                    Quay lại
+                </button>
+            </div>
+        `);
+        return;
+    }
+    
+    // Build provider options
+    const providerOptions = configuredProviders.map(provider => {
+        const info = AI_PROVIDERS[provider];
+        if (!info) return '';
+        return `<option value="${provider}">${info.name} ${info.badge === 'FREE' ? '⭐ (Miễn phí)' : '(Trả phí)'}</option>`;
+    }).join('');
+    
+    // Select default provider (prefer Gemini if available)
+    const defaultProvider = configuredProviders.includes('gemini') ? 'gemini' : configuredProviders[0];
+    
     showModal(`
         <h3 class="text-2xl font-bold mb-4">
             <i class="fas fa-robot mr-2 text-purple-600"></i>
-            Sinh câu hỏi bằng AI (Gemini)
+            Sinh câu hỏi bằng AI
         </h3>
         <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-2">Gemini API Key <span class="text-red-500">*</span></label>
-                <input type="password" id="aiApiKey" value="${storedKey}" placeholder="Nhập API Key của bạn" class="w-full px-4 py-2 border rounded-lg">
-                <p class="text-xs text-green-600 mt-1"><i class="fas fa-check-circle mr-1"></i>Key sẽ được lưu tự động trên trình duyệt này.</p>
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p class="text-sm text-green-800">
+                    <i class="fas fa-lightbulb mr-2"></i>
+                    <strong>Khuyến nghị:</strong> Sử dụng Google Gemini (miễn phí) để tiết kiệm chi phí.
+                    <a href="javascript:showAPIKeyManagementModal()" class="underline ml-2">Quản lý API Keys</a>
+                </p>
             </div>
+            
+            <div>
+                <label class="block text-sm font-medium mb-2">
+                    Nhà cung cấp AI <span class="text-red-500">*</span>
+                </label>
+                <select id="aiProvider" class="w-full px-4 py-2 border rounded-lg" onchange="updateAIProviderInfo()">
+                    ${providerOptions}
+                </select>
+                <div id="aiProviderInfo" class="mt-2 text-xs text-gray-600"></div>
+            </div>
+            
             <div>
                 <label class="block text-sm font-medium mb-2">Chủ đề</label>
                 <input type="text" id="aiTopic" placeholder="VD: Phản ứng oxi hóa khử" class="w-full px-4 py-2 border rounded-lg">
@@ -1543,7 +1897,7 @@ function showAIGenerateModal() {
             </div>
             <div class="flex space-x-3">
                 <button onclick="generateAIQuestions()" class="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 rounded-lg hover:from-purple-600 hover:to-pink-600">
-                    Sinh câu hỏi
+                    <i class="fas fa-magic mr-2"></i>Sinh câu hỏi
                 </button>
                 <button onclick="showCreateExamModal()" class="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400">
                     Quay lại
@@ -1551,17 +1905,38 @@ function showAIGenerateModal() {
             </div>
         </div>
     `);
+    
+    // Initialize provider info
+    setTimeout(() => updateAIProviderInfo(), 100);
+}
+
+// Update AI provider info display
+function updateAIProviderInfo() {
+    const select = document.getElementById('aiProvider');
+    const infoDiv = document.getElementById('aiProviderInfo');
+    
+    if (!select || !infoDiv) return;
+    
+    const provider = select.value;
+    const info = AI_PROVIDERS[provider];
+    
+    if (info) {
+        infoDiv.innerHTML = `
+            <i class="fas ${info.icon} mr-1"></i>
+            ${info.description} | Model: <span class="font-mono">${info.model}</span>
+        `;
+    }
 }
 
 async function generateAIQuestions() {
-    const api_key = document.getElementById('aiApiKey').value;
+    const provider = document.getElementById('aiProvider')?.value;
     const topic = document.getElementById('aiTopic').value;
     const difficulty_level = document.getElementById('aiDifficulty').value;
     const question_type = document.getElementById('aiQuestionType').value;
     const count = parseInt(document.getElementById('aiCount').value);
 
-    if (!api_key) {
-        alert('Vui lòng nhập Gemini API Key!');
+    if (!provider) {
+        alert('Vui lòng chọn nhà cung cấp AI!');
         return;
     }
 
@@ -1570,8 +1945,13 @@ async function generateAIQuestions() {
         return;
     }
 
-    // Save key for future use
-    localStorage.setItem('gemini_api_key', api_key);
+    // Get API key for selected provider
+    const api_key = getAPIKeyForProvider(provider);
+    
+    if (!api_key) {
+        alert('Không tìm thấy API key cho nhà cung cấp này!');
+        return;
+    }
 
     try {
         // Show loading state
@@ -1581,6 +1961,7 @@ async function generateAIQuestions() {
         btn.disabled = true;
 
         const response = await axios.post('/api/ai/generate-questions', {
+            provider,
             topic,
             difficulty_level,
             question_type,
@@ -1590,10 +1971,18 @@ async function generateAIQuestions() {
 
         examQuestions.push(...response.data.questions);
         showCreateExamModal();
-        alert(`Đã sinh ${count} câu hỏi thành công!`);
+        alert(`Đã sinh ${count} câu hỏi thành công bằng ${AI_PROVIDERS[provider]?.name}!`);
     } catch (error) {
         console.error(error);
-        alert('Lỗi khi sinh câu hỏi: ' + (error.response?.data?.error || error.message));
+        const errorMsg = error.response?.data?.error || error.message;
+        alert('Lỗi khi sinh câu hỏi: ' + errorMsg);
+        
+        // Restore button
+        const btn = document.querySelector('button[onclick="generateAIQuestions()"]');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Sinh câu hỏi';
+            btn.disabled = false;
+        }
     }
 }
 

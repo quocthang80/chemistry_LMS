@@ -22,7 +22,7 @@ app.get('/teacher', (c) => {
 })
 
 app.get('/student', (c) => {
-  return c.redirect('/static/student_v4.html?v=' + Date.now())
+  return c.redirect('/static/student_v5.html?v=' + Date.now())
 })
 
 // ============================================
@@ -564,7 +564,7 @@ app.post('/api/results', async (c) => {
              // Answer format: answers[question.id].statements = { "0": true, "1": false } (keys are indices)
              const studentAnswer = answer.statements && answer.statements[i]; // Access by index
              
-             if (studentAnswer === stmt.is_correct) {
+             if (studentAnswer == stmt.is_correct) {
                correctCount++;
              }
            }
@@ -602,6 +602,18 @@ app.put('/api/results/:id', async (c) => {
   } catch (error) {
     console.error(error)
     return c.json({ error: 'Failed to update result' }, 500)
+  }
+})
+
+// Delete result (Reset student exam)
+app.delete('/api/results/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM results WHERE id = ?').bind(id).run()
+    return c.json({ success: true })
+  } catch (error) {
+    console.error(error)
+    return c.json({ error: 'Failed to delete result' }, 500)
   }
 })
 
@@ -695,82 +707,43 @@ app.get('/api/exams/:examId/export', async (c) => {
 // API ROUTES - AI GENERATION
 // ============================================
 
-// Generate exam questions using AI with Gemini
+// Generate exam questions using AI with multiple providers
 app.post('/api/ai/generate-questions', async (c) => {
   try {
-    const { topic, difficulty_level, question_type, count, api_key } = await c.req.json()
+    const { provider = 'gemini', topic, difficulty_level, question_type, count, api_key } = await c.req.json()
 
     if (!api_key) {
-      return c.json({ error: 'Vui lòng nhập Gemini API Key' }, 400)
+      return c.json({ error: 'Vui lòng nhập API Key' }, 400)
     }
 
-    const prompt = `
-      Generate ${count} ${question_type} questions about "${topic}" (difficulty: ${difficulty_level}) in Vietnamese.
-      Return ONLY a raw JSON array (no markdown code blocks) with this exact schema:
-      [
-        {
-          "content": "Question text",
-          "difficulty_level": "${difficulty_level}",
-          "points": 1.0,
-          "question_type": "${question_type}",
-          // For MCQ only:
-          "options": [
-            {"option_text": "A", "is_correct": true},
-            {"option_text": "B", "is_correct": false},
-            {"option_text": "C", "is_correct": false},
-            {"option_text": "D", "is_correct": false}
-          ],
-          // For True/False only:
-          "statements": [
-            {"statement_text": "Statement 1", "is_correct": true},
-            {"statement_text": "Statement 2", "is_correct": false},
-            {"statement_text": "Statement 3", "is_correct": true},
-            {"statement_text": "Statement 4", "is_correct": false}
-          ]
-        }
-      ]
-    `
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-preview:generateContent?key=${api_key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.error?.message || errorText);
-      } catch (e) {
-        throw new Error(`Gemini API Error: ${errorText}`)
-      }
+    if (!topic) {
+      return c.json({ error: 'Vui lòng nhập chủ đề' }, 400)
     }
 
-    const data = await response.json()
-    const rawText = data.candidates[0].content.parts[0].text
-    
-    // Clean markdown code blocks if present
-    const jsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim()
-    
     let questions = []
-    try {
-        questions = JSON.parse(jsonString)
-    } catch (e) {
-        console.error("Failed to parse JSON:", jsonString)
-        throw new Error("AI trả về dữ liệu không đúng định dạng JSON.")
+
+    // Route to appropriate provider
+    switch (provider) {
+      case 'gemini':
+        questions = await generateWithGemini(topic, difficulty_level, question_type, count, api_key)
+        break
+      case 'openai':
+        questions = await generateWithOpenAI(topic, difficulty_level, question_type, count, api_key)
+        break
+      case 'claude':
+        questions = await generateWithClaude(topic, difficulty_level, question_type, count, api_key)
+        break
+      default:
+        return c.json({ error: `Nhà cung cấp không được hỗ trợ: ${provider}` }, 400)
     }
 
     // Ensure points are set based on type if missing
     questions.forEach((q: any) => {
-        if (!q.points) {
-            q.points = question_type === 'essay' ? 3.0 : (question_type === 'true_false' ? 2.0 : 1.0)
-        }
-        q.question_type = question_type // Force type consistency
-        // Fallback ID if needed, but frontend likely generates it
-        if (!q.id) q.id = Date.now() + Math.random(); 
+      if (!q.points) {
+        q.points = question_type === 'essay' ? 3.0 : (question_type === 'true_false' ? 2.0 : 1.0)
+      }
+      q.question_type = question_type // Force type consistency
+      if (!q.id) q.id = Date.now() + Math.random()
     })
 
     return c.json({ success: true, questions })
@@ -779,6 +752,176 @@ app.post('/api/ai/generate-questions', async (c) => {
     return c.json({ error: 'Lỗi sinh câu hỏi: ' + error.message }, 500)
   }
 })
+
+// Helper function: Generate questions with Gemini
+async function generateWithGemini(topic: string, difficulty: string, type: string, count: number, apiKey: string) {
+  const prompt = `
+    Generate ${count} ${type} questions about "${topic}" (difficulty: ${difficulty}) in Vietnamese.
+    Return ONLY a raw JSON array (no markdown code blocks) with this exact schema:
+    [
+      {
+        "content": "Question text",
+        "difficulty_level": "${difficulty}",
+        "points": 1.0,
+        "question_type": "${type}",
+        // For MCQ only:
+        "options": [
+          {"option_text": "A", "is_correct": true},
+          {"option_text": "B", "is_correct": false},
+          {"option_text": "C", "is_correct": false},
+          {"option_text": "D", "is_correct": false}
+        ],
+        // For True/False only:
+        "statements": [
+          {"statement_text": "Statement 1", "is_correct": true},
+          {"statement_text": "Statement 2", "is_correct": false},
+          {"statement_text": "Statement 3", "is_correct": true},
+          {"statement_text": "Statement 4", "is_correct": false}
+        ]
+      }
+    ]
+  `
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }]
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    try {
+      const errorJson = JSON.parse(errorText)
+      const errorMessage = errorJson.error?.message || errorText
+      
+      // Provide more specific error messages
+      if (response.status === 400) {
+        throw new Error(`Yêu cầu không hợp lệ: ${errorMessage}`)
+      } else if (response.status === 401 || response.status === 403) {
+        throw new Error(`API Key không hợp lệ hoặc không có quyền truy cập. Vui lòng kiểm tra lại API Key.`)
+      } else if (response.status === 404) {
+        throw new Error(`Mô hình không tìm thấy. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.`)
+      } else if (response.status === 429) {
+        throw new Error(`Đã vượt quá giới hạn số lần gọi API. Vui lòng đợi một chút rồi thử lại.`)
+      } else if (response.status === 500 || response.status === 503) {
+        throw new Error(`Lỗi server Gemini. Vui lòng thử lại sau.`)
+      } else {
+        throw new Error(`Lỗi Gemini API (${response.status}): ${errorMessage}`)
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('Lỗi')) {
+        throw e // Re-throw our custom error messages
+      }
+      throw new Error(`Lỗi Gemini API: ${errorText}`)
+    }
+  }
+
+  const data = await response.json()
+  const rawText = data.candidates[0].content.parts[0].text
+  const jsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim()
+  
+  try {
+    return JSON.parse(jsonString)
+  } catch (e) {
+    console.error("Failed to parse JSON:", jsonString)
+    throw new Error("AI trả về dữ liệu không đúng định dạng JSON.")
+  }
+}
+
+// Helper function: Generate questions with OpenAI
+async function generateWithOpenAI(topic: string, difficulty: string, type: string, count: number, apiKey: string) {
+  const prompt = `Generate ${count} ${type} questions about "${topic}" (difficulty: ${difficulty}) in Vietnamese.
+Return ONLY a JSON array with this schema:
+[{
+  "content": "Question text",
+  "difficulty_level": "${difficulty}",
+  "points": 1.0,
+  "question_type": "${type}",
+  "options": [{"option_text": "A", "is_correct": true}, {"option_text": "B", "is_correct": false}, {"option_text": "C", "is_correct": false}, {"option_text": "D", "is_correct": false}],
+  "statements": [{"statement_text": "Statement 1", "is_correct": true}, {"statement_text": "Statement 2", "is_correct": false}, {"statement_text": "Statement 3", "is_correct": true}, {"statement_text": "Statement 4", "is_correct": false}]
+}]`
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'You are a chemistry teacher creating exam questions. Always respond with valid JSON only.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+      response_format: { type: 'json_object' }
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`OpenAI API Error: ${errorText}`)
+  }
+
+  const data = await response.json()
+  const content = data.choices[0].message.content
+  
+  try {
+    const parsed = JSON.parse(content)
+    return parsed.questions || parsed
+  } catch (e) {
+    console.error("Failed to parse OpenAI response:", content)
+    throw new Error("OpenAI trả về dữ liệu không đúng định dạng.")
+  }
+}
+
+// Helper function: Generate questions with Claude
+async function generateWithClaude(topic: string, difficulty: string, type: string, count: number, apiKey: string) {
+  const prompt = `Generate ${count} ${type} questions about "${topic}" (difficulty: ${difficulty}) in Vietnamese.
+Return ONLY a JSON array with this schema:
+[{
+  "content": "Question text",
+  "difficulty_level": "${difficulty}",
+  "points": 1.0,
+  "question_type": "${type}",
+  "options": [{"option_text": "A", "is_correct": true}, {"option_text": "B", "is_correct": false}, {"option_text": "C", "is_correct": false}, {"option_text": "D", "is_correct": false}],
+  "statements": [{"statement_text": "Statement 1", "is_correct": true}, {"statement_text": "Statement 2", "is_correct": false}, {"statement_text": "Statement 3", "is_correct": true}, {"statement_text": "Statement 4", "is_correct": false}]
+}]`
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 4096,
+      messages: [
+        { role: 'user', content: prompt }
+      ]
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Claude API Error: ${errorText}`)
+  }
+
+  const data = await response.json()
+  const content = data.content[0].text
+  const jsonString = content.replace(/```json/g, '').replace(/```/g, '').trim()
+  
+  try {
+    return JSON.parse(jsonString)
+  } catch (e) {
+    console.error("Failed to parse Claude response:", content)
+    throw new Error("Claude trả về dữ liệu không đúng định dạng.")
+  }
+}
 
 
 
